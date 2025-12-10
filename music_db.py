@@ -286,11 +286,14 @@ class MusicDB:
             Set[str]: set of artist names
             If there is no artist with a single released in the given year, an empty set is returned.
         """
-        self.cur.execute("""SELECT DISTINCT a.name FROM artists a JOIN songs s ON a.id = s.artist_id
-                           WHERE s.album_id IS NULL AND YEAR(s.release_date) = %s
-                           AND s.release_date = (SELECT MAX(s2.release_date) FROM songs s2
-                                                 WHERE s2.artist_id = a.id AND s2.album_id IS NULL AND YEAR(s2.release_date) = %s)""",
-                         (year, year))
+        self.cur.execute("""
+                        SELECT a.name
+                        FROM artists a
+                        JOIN songs s ON a.id = s.artist_id
+                        WHERE s.album_id IS NULL
+                        GROUP BY a.id
+                        HAVING YEAR(MAX(s.release_date)) = %s
+                        """, (year,))
         return {r[0] for r in self.cur.fetchall()}
 
     def get_top_song_genres(self, n: int) -> List[Tuple[str, int]]:
@@ -344,10 +347,13 @@ class MusicDB:
             List[Tuple[str,str,int]: list of (song title, artist name, number of ratings for song)   
         """
         s, e = yr
-        self.cur.execute("""SELECT a.name, s.title, COUNT(*) FROM ratings r
-                           JOIN songs s ON r.song_id = s.id JOIN artists a ON s.artist_id = a.id
-                           WHERE YEAR(r.rating_date) BETWEEN %s AND %s
-                           GROUP BY s.id ORDER BY COUNT(*) DESC, a.name, s.title LIMIT %s""", (s, e, n))
+        self.cur.execute("""SELECT s.title, a.name, COUNT(*) FROM ratings r
+                        JOIN songs s ON r.song_id = s.id
+                        JOIN artists a ON s.artist_id = a.id
+                        WHERE YEAR(r.rating_date) BETWEEN %s AND %s
+                        GROUP BY s.id
+                        ORDER BY COUNT(*) DESC, s.title
+                        LIMIT %s""", (s, e, n))
         return self.cur.fetchall()
 
     def get_most_engaged_users(self, yr: Tuple[int, int], n: int) -> List[Tuple[str, int]]:
