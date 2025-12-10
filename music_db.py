@@ -245,6 +245,7 @@ class MusicDB:
             self.conn.commit()
         return rejected
 
+    #queries
     def get_most_prolific_individual_artists(self, n: int, yr: Tuple[int, int]) -> List[Tuple[str, int]]:
         """
         Get the top n most prolific individual artists by number of singles released in a year range. 
@@ -261,9 +262,16 @@ class MusicDB:
             If there are no artists, an empty list is returned.
         """
         s, e = yr
-        self.cur.execute("""SELECT a.name, COUNT(*) FROM songs s JOIN artists a ON s.artist_id = a.id
-                           WHERE YEAR(COALESCE(s.release_date, (SELECT release_date FROM albums WHERE id = s.album_id))) BETWEEN %s AND %s
-                           GROUP BY a.id ORDER BY COUNT(*) DESC, a.name LIMIT %s""", (s, e, n))
+        self.cur.execute("""
+                        SELECT a.name, COUNT(*)
+                        FROM songs s
+                        JOIN artists a ON s.artist_id = a.id
+                        WHERE s.album_id IS NULL AND YEAR(s.release_date) BETWEEN %s AND %s
+                        GROUP BY a.id
+                        ORDER BY COUNT(*) DESC, a.name
+                        LIMIT %s
+                        """, (s, e, n))
+
         return self.cur.fetchall()
 
     def get_artists_last_single_in_year(self, year: int) -> Set[str]:
