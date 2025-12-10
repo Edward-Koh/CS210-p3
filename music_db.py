@@ -160,6 +160,18 @@ class MusicDB:
         return rejected
 
     def load_users(self, users: List[str]) -> Set[str]:
+        """
+        Add users to the database. 
+
+        Args:
+            mydb: database connection
+            users: list of usernames
+
+        Returns:
+            Set[str]: set of all usernames that were not added (rejected) because 
+            they are duplicates of existing users.
+            Set is empty if there are no rejects.
+        """
         rejected = set()
         for u in users:
             self.cur.execute("INSERT IGNORE INTO users (username) VALUES (%s)", (u,))
@@ -169,6 +181,28 @@ class MusicDB:
         return rejected
 
     def load_song_ratings(self, ratings: List[Tuple[str, Tuple[str, str], int, str]]) -> Set[Tuple[str, str, str]]:
+        """
+        Load ratings for songs, which are either singles or songs in albums. 
+
+        Args:
+            mydb: database connection
+            song_ratings: list of rating tuples of the form:
+                (rater, (artist, song), rating, date)
+            
+            The rater is a username, the (artist,song) tuple refers to the uniquely identifiable song to be rated.
+            e.g. ('u1',('a1','song1'),4,'2021-11-18') => u1 is giving a rating of 4 to the (a1,song1) song.
+
+        Returns:
+            Set[Tuple[str,str,str]]: set of (username,artist,song) tuples that are rejected, for any of the following
+            reasongs:
+            (a) username (rater) is not in the database, or
+            (b) username is in database but (artist,song) combination is not in the database, or
+            (c) username has already rated (artist,song) combination, or
+            (d) everything else is legit, but rating is not in range 1..5
+            
+            An empty set is returned if there are no rejects.  
+        """
+
         added = set()
         for user, (artist, title), stars, date in ratings:
             # get user id
