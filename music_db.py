@@ -246,6 +246,20 @@ class MusicDB:
         return rejected
 
     def get_most_prolific_individual_artists(self, n: int, yr: Tuple[int, int]) -> List[Tuple[str, int]]:
+        """
+        Get the top n most prolific individual artists by number of singles released in a year range. 
+        Break ties by alphabetical order of artist name.
+
+        Args:
+            mydb: database connection
+            n: how many to get
+            year_range: tuple, e.g. (2015,2020)
+
+        Returns:
+            List[Tuple[str,int]]: list of (artist name, number of songs) tuples.
+            If there are fewer than n artists, all of them are returned.
+            If there are no artists, an empty list is returned.
+        """
         s, e = yr
         self.cur.execute("""SELECT a.name, COUNT(*) FROM songs s JOIN artists a ON s.artist_id = a.id
                            WHERE YEAR(COALESCE(s.release_date, (SELECT release_date FROM albums WHERE id = s.album_id))) BETWEEN %s AND %s
@@ -253,6 +267,17 @@ class MusicDB:
         return self.cur.fetchall()
 
     def get_artists_last_single_in_year(self, year: int) -> Set[str]:
+        """
+        Get all artists who released their last single in the given year.
+        
+        Args:
+            mydb: database connection
+            year: year of last release
+            
+        Returns:
+            Set[str]: set of artist names
+            If there is no artist with a single released in the given year, an empty set is returned.
+        """
         self.cur.execute("""SELECT DISTINCT a.name FROM artists a JOIN songs s ON a.id = s.artist_id
                            WHERE s.album_id IS NULL AND YEAR(s.release_date) = %s
                            AND s.release_date = (SELECT MAX(s2.release_date) FROM songs s2
@@ -261,18 +286,55 @@ class MusicDB:
         return {r[0] for r in self.cur.fetchall()}
 
     def get_top_song_genres(self, n: int) -> List[Tuple[str, int]]:
+        """
+        Get n genres that are most represented in terms of number of songs in that genre.
+        Songs include singles as well as songs in albums. 
+        
+        Args:
+            mydb: database connection
+            n: number of genres
+
+        Returns:
+            List[Tuple[str,int]]: list of tuples (genre,number_of_songs), from most represented to
+            least represented genre. If number of genres is less than n, returns all.
+            Ties broken by alphabetical order of genre names.
+        """
         self.cur.execute(
             "SELECT g.name, COUNT(*) FROM song_genres sg JOIN genres g ON sg.genre_id = g.id "
             "GROUP BY g.id ORDER BY COUNT(*) DESC, g.name LIMIT %s", (n,))
         return self.cur.fetchall()
 
     def get_album_and_single_artists(self) -> Set[str]:
+        """
+        Get artists who have released albums as well as singles.
+
+        Args:
+            mydb; database connection
+
+        Returns:
+            Set[str]: set of artist names
+        """
         self.cur.execute("""SELECT a.name FROM artists a WHERE EXISTS
                            (SELECT 1 FROM songs WHERE artist_id = a.id AND album_id IS NOT NULL)
                            AND EXISTS (SELECT 1 FROM songs WHERE artist_id = a.id AND album_id IS NULL)""")
         return {r[0] for r in self.cur.fetchall()}
 
     def get_most_rated_songs(self, yr: Tuple[int, int], n: int) -> List[Tuple[str, str, int]]:
+        """
+        Get the top n most rated songs in the given year range (both inclusive), 
+        ranked from most rated to least rated. 
+        "Most rated" refers to number of ratings, not actual rating scores. 
+        Ties are broken in alphabetical order of song title. If the number of rated songs is less
+        than n, all rates songs are returned.
+        
+        Args:
+            mydb: database connection
+            year_range: range of years, e.g. (2018-2021), during which ratings were given
+            n: number of most rated songs
+
+        Returns:
+            List[Tuple[str,str,int]: list of (song title, artist name, number of ratings for song)   
+        """
         s, e = yr
         self.cur.execute("""SELECT a.name, s.title, COUNT(*) FROM ratings r
                            JOIN songs s ON r.song_id = s.id JOIN artists a ON s.artist_id = a.id
@@ -281,8 +343,26 @@ class MusicDB:
         return self.cur.fetchall()
 
     def get_most_engaged_users(self, yr: Tuple[int, int], n: int) -> List[Tuple[str, int]]:
+        """
+        Get the top n most engaged users, in terms of number of songs they have rated.
+        Break ties by alphabetical order of usernames.
+
+        Args:
+            mydb: database connection
+            year_range: range of years, e.g. (2018-2021), during which ratings were given
+            n: number of users
+
+        Returns:
+            List[Tuple[str, int]]: list of (username,number_of_songs_rated) tuples
+        """
         s, e = yr
         self.cur.execute("""SELECT u.username, COUNT(*) FROM ratings r JOIN users u ON r.user_id = u.id
                            WHERE YEAR(r.rating_date) BETWEEN %s AND %s
                            GROUP BY u.id ORDER BY COUNT(*) DESC, u.username LIMIT %s""", (s, e, n))
         return self.cur.fetchall()
+
+def main():
+    pass
+
+if __name__ == "__main__":
+    main()
