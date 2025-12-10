@@ -133,18 +133,18 @@ class MusicDB:
                     
                     song_id = self.cur.lastrowid
                     # Assign genre to song
-                    self.cur.execute("INSERT INTO song_genres (song_id, genre_id) VALUES (%s, %s)", (song_id, album_genre_id))
+                    self.cur.execute("INSERT IGNORE INTO song_genres (song_id, genre_id) VALUES (%s, %s)", (song_id, album_genre_id))
             self.conn.commit()
         return added
 
     def load_users(self, users: List[str]) -> Set[str]:
-        added = set()
+        rejected = set()
         for u in users:
             self.cur.execute("INSERT IGNORE INTO users (username) VALUES (%s)", (u,))
-            if self.cur.rowcount:
-                added.add(u)
+            if not self.cur.rowcount:
+                rejected.add(u)
         self.conn.commit()
-        return added
+        return rejected
 
     def load_song_ratings(self, ratings: List[Tuple[str, Tuple[str, str], int, str]]) -> Set[Tuple[str, str, str]]:
         added = set()
