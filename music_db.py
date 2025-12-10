@@ -90,14 +90,28 @@ class MusicDB:
                 self.cur.execute("INSERT INTO artists (name) VALUES (%s)", (artist,))
                 artist_id = self.cur.lastrowid
 
-            self.cur.execute("SELECT id FROM genres WHERE name = %s", ('Unknown',))
-            grow = self.cur.fetchone()
-            if grow:
-                unknown_genre_id = grow[0]
-            else:
-                self.cur.execute("INSERT INTO genres (name) VALUES (%s)", ('Unknown',))
-                unknown_genre_id = self.cur.lastrowid
+            #Determine album genre from first song(if it doesn't violate uniqueness)
+            album_genre_id = None
+            for title in songs:
+                self.cur.execute("SELECT songs.id, song_genres.genre_id FROM songs "
+                                "JOIN song_genres ON songs.id = song_genres.song_id "
+                                "WHERE songs.title = %s AND songs.artist_id = %s", (title, artist_id))
+                song_info = self.cur.fetchone()
+                if song_info:
+                    album_genre_id = song_info[1]
+                    break
+            
+            #genre defaults to 'Unknown' if not found
+            if album_genre_id is None:
+                self.cur.execute("SELECT id FROM genres WHERE name = 'Unknown'")
+                grow = self.cur.fetchone()
+                if grow:
+                    album_genre_id = grow[0]
+                else:
+                    self.cur.execute("INSERT INTO genres (name) VALUES ('Unknown')")
+                    album_genre_id = self.cur.lastrowid
 
+            #Check if album already exist for that artist
             self.cur.execute("SELECT id FROM albums WHERE name = %s AND artist_id = %s", (album_name, artist_id))
             arow = self.cur.fetchone()
             if arow:
@@ -105,23 +119,21 @@ class MusicDB:
             else:
                 self.cur.execute(
                     "INSERT INTO albums (name, artist_id, release_date, genre_id) VALUES (%s, %s, %s, %s)",
-                    (album_name, artist_id, date, unknown_genre_id)
+                    (album_name, artist_id, date, album_genre_id)
                 )
                 album_id = self.cur.lastrowid
                 added.add((artist, album_name))
 
+            #Insert songs with album_id
             for title in songs:
                 self.cur.execute("SELECT id FROM songs WHERE title = %s AND artist_id = %s", (title, artist_id))
-                if self.cur.fetchone():
-                    continue
-
-                # insert the song with album_id set
-                self.cur.execute(
-                    "INSERT INTO songs (title, artist_id, album_id) VALUES (%s, %s, %s)",
-                    (title, artist_id, album_id)
-                )
-                song_id = self.cur.lastrowid
-                self.cur.execute("INSERT IGNORE INTO song_genres (song_id, genre_id) VALUES (%s, %s)", (song_id, unknown_genre_id))
+                if not self.cur.fetchone():
+                    self.cur.execute("INSERT INTO songs (title, artist_id, album_id, release_date) VALUES (%s, %s, %s, %s)",
+                                    (title, artist_id, album_id, date))
+                    
+                    song_id = self.cur.lastrowid
+                    # Assign genre to song
+                    self.cur.execute("INSERT INTO song_genres (song_id, genre_id) VALUES (%s, %s)", (song_id, album_genre_id))
             self.conn.commit()
         return added
 
