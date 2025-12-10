@@ -380,3 +380,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+def clear_database():
+    db = MusicDB()
+    db.clear_database()
+    db.close()
