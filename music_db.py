@@ -89,14 +89,26 @@ class MusicDB:
 
     def load_albums(self, albums: List[Tuple[str, str, str, List[str]]]) -> Set[Tuple[str, str]]:
         """
-        albums: list of tuples (artist_name, album_name, release_date, [song_title, ...])
-        Inserts artists/genres/albums as needed. For each song in album, inserts it only if there's no song
-        with the same title for that artist (prevents UNIQUE violation).
-        Returns set of (artist_name, album_name) that were newly added as albums.
+        Add albums to the database. 
+        
+        Args:
+            mydb: database connection
+            
+            albums: List of albums to add. Each album is a tuple of the form:
+                (album title, genre, artist name, release date, list of song titles) 
+            Release date is of the form yyyy-dd-mm
+            Example album: ('Album1','Jazz','A1','2008-10-01',['s1','s2','s3','s4','s5','s6'])
+
+        Returns:
+            Set[Tuple[str,str]: set of (album, artist) combinations that were not added (rejected) 
+            because the artist already has an album of the same title.
+            Set is empty if there are no rejects.
         """
-        added = set()
-        for artist, album_name, date, songs in albums:
+        rejected = set()
+        for item in albums:
             # ensure artist exists
+            album_title, album_genre, artist, release_date, songs = item
+
             self.cur.execute("SELECT id FROM artists WHERE name = %s", (artist,))
             row = self.cur.fetchone()
             if row:
@@ -105,52 +117,47 @@ class MusicDB:
                 self.cur.execute("INSERT INTO artists (name) VALUES (%s)", (artist,))
                 artist_id = self.cur.lastrowid
 
-            #Determine album genre from first song(if it doesn't violate uniqueness)
-            album_genre_id = None
-            for title in songs:
-                self.cur.execute("SELECT songs.id, song_genres.genre_id FROM songs "
-                                "JOIN song_genres ON songs.id = song_genres.song_id "
-                                "WHERE songs.title = %s AND songs.artist_id = %s", (title, artist_id))
-                song_info = self.cur.fetchone()
-                if song_info:
-                    album_genre_id = song_info[1]
-                    break
-            
-            #genre defaults to 'Unknown' if not found
-            if album_genre_id is None:
-                self.cur.execute("SELECT id FROM genres WHERE name = 'Unknown'")
-                grow = self.cur.fetchone()
-                if grow:
-                    album_genre_id = grow[0]
-                else:
-                    self.cur.execute("INSERT INTO genres (name) VALUES ('Unknown')")
-                    album_genre_id = self.cur.lastrowid
+            #add given album genre
+            self.cur.execute("SELECT id FROM genres WHERE name = %s", (album_genre,))
+            grow = self.cur.fetchone()
+            if grow:
+                album_genre_id = grow[0]
+            else:
+                self.cur.execute("INSERT INTO genres (name) VALUES (%s)", (album_genre,))
+                album_genre_id = self.cur.lastrowid
+
+            #Check if album already exists for artist
+            self.cur.execute(
+                "SELECT id FROM albums WHERE name = %s AND artist_id = %s",
+                (album_title, artist_id)
+            )
+            arow = self.cur.fetchone()
+
+            if arow:
+                rejected.add((album_title, artist))
+                continue
+
+            self.cur.execute(
+                "INSERT INTO albums (name, artist_id, release_date, genre_id) VALUES (%s, %s, %s, %s)",
+                (album_title, artist_id, release_date, album_genre_id)
+            )
+            album_id = self.cur.lastrowid
 
             #Check if album already exist for that artist
-            self.cur.execute("SELECT id FROM albums WHERE name = %s AND artist_id = %s", (album_name, artist_id))
-            arow = self.cur.fetchone()
-            if arow:
-                album_id = arow[0]
-            else:
-                self.cur.execute(
-                    "INSERT INTO albums (name, artist_id, release_date, genre_id) VALUES (%s, %s, %s, %s)",
-                    (album_name, artist_id, date, album_genre_id)
-                )
-                album_id = self.cur.lastrowid
-                added.add((artist, album_name))
-
-            #Insert songs with album_id
             for title in songs:
-                self.cur.execute("SELECT id FROM songs WHERE title = %s AND artist_id = %s", (title, artist_id))
+            # Insert only if title does not already exist for this artist
+                self.cur.execute("SELECT id FROM songs WHERE title = %s AND artist_id = %s",
+                                (title, artist_id))
                 if not self.cur.fetchone():
                     self.cur.execute("INSERT INTO songs (title, artist_id, album_id, release_date) VALUES (%s, %s, %s, %s)",
-                                    (title, artist_id, album_id, date))
-                    
+                                    (title, artist_id, album_id, release_date))
                     song_id = self.cur.lastrowid
-                    # Assign genre to song
-                    self.cur.execute("INSERT IGNORE INTO song_genres (song_id, genre_id) VALUES (%s, %s)", (song_id, album_genre_id))
+
+                    # Assign this album’s genre to every song
+                    self.cur.execute("INSERT INTO song_genres (song_id, genre_id) VALUES (%s, %s)",
+                                    (song_id, album_genre_id))
             self.conn.commit()
-        return added
+        return rejected
 
     def load_users(self, users: List[str]) -> Set[str]:
         rejected = set()
