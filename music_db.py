@@ -5,7 +5,7 @@ class MusicDB:
     # open & close connection
     def __init__(self):
         self.conn = mysql.connector.connect(
-            host='localhost', user='root', password='', database='eyk34_music_db' #<netid>_music_db for one group member
+            host='localhost', user='root', password='', database='music_db' #<netid>_music_db for one group member
         )
         self.cur = self.conn.cursor()
     def close(self):
