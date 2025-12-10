@@ -203,34 +203,47 @@ class MusicDB:
             An empty set is returned if there are no rejects.  
         """
 
-        added = set()
+        rejected = set()
         for user, (artist, title), stars, date in ratings:
-            # get user id
+            #(a)check if user exist
             self.cur.execute("SELECT id FROM users WHERE username = %s", (user,))
             urow = self.cur.fetchone()
             if not urow:
+                rejected.add((user, artist, title))
                 continue
             uid = urow[0]
 
-            # get song id by joining artist -> songs
-            self.cur.execute(
-                "SELECT s.id FROM songs s JOIN artists a ON s.artist_id = a.id WHERE a.name = %s AND s.title = %s",
-                (artist, title)
-            )
+            #(b) check if song exist (artist, title)
+            self.cur.execute("SELECT s.id FROM songs s JOIN artists a ON s.artist_id = a.id WHERE a.name = %s AND s.title = %s",
+                            (artist, title))
             srow = self.cur.fetchone()
             if not srow:
+                rejected.add((user, artist, title))
                 continue
             sid = srow[0]
 
-            self.cur.execute(
-                """INSERT INTO ratings (user_id, song_id, rating, rating_date)
-                   VALUES (%s, %s, %s, %s)
-                   ON DUPLICATE KEY UPDATE rating = VALUES(rating), rating_date = VALUES(rating_date)""",
-                (uid, sid, stars, date)
-            )
-            added.add((user, artist, title))
+            #(d) check if ratings are good
+            try:
+                r = int(stars)
+            except Exception:
+                rejected.add((user, artist, title))
+                continue
+            if r < 1 or r > 5:
+                rejected.add((user, artist, title))
+                continue
+
+            #(c)check if user already rated this song
+            self.cur.execute("SELECT 1 FROM ratings WHERE user_id = %s AND song_id = %s",
+                            (uid, sid))
+            if self.cur.fetchone():
+                rejected.add((user, artist, title))
+                continue
+
+            #Insert rating
+            self.cur.execute("INSERT INTO ratings (user_id, song_id, rating, rating_date) VALUES (%s, %s, %s, %s)",
+                            (uid, sid, r, date))
             self.conn.commit()
-        return added
+        return rejected
 
     def get_most_prolific_individual_artists(self, n: int, yr: Tuple[int, int]) -> List[Tuple[str, int]]:
         s, e = yr
