@@ -13,7 +13,7 @@ def clear_database(mydb):
         cur.execute(f"DELETE FROM {table}")
     mydb.commit()
 
-def load_single_songs(self, singles: List[Tuple[str, Tuple[str, ...], str, str]]) -> Set[Tuple[str, str]]:
+def load_single_songs(db_conn, singles: List[Tuple[str, Tuple[str, ...], str, str]]) -> Set[Tuple[str, str]]:
     """
     Add single songs to the database. 
 
@@ -33,48 +33,50 @@ def load_single_songs(self, singles: List[Tuple[str, Tuple[str, ...], str, str]]
         Set is empty if there are no rejects.
     """
     rejected = set()
+    cur = db_conn.cursor()
     for item in singles:
         title, genres, artist, date = item
         # ensure artist exists
-        self.cur.execute("SELECT id FROM artists WHERE name = %s", (artist,))
-        row = self.cur.fetchone()
+        cur.execute("SELECT id FROM artists WHERE name = %s", (artist,))
+        row = cur.fetchone()
         if row:
             artist_id = row[0]
         else:
-            self.cur.execute("INSERT INTO artists (name) VALUES (%s)", (artist,))
-            artist_id = self.cur.lastrowid
+            cur.execute("INSERT INTO artists (name) VALUES (%s)", (artist,))
+            artist_id = cur.lastrowid
 
         # ensure genres exist and collect ids
         genre_ids = []
         for g in genres:
-            self.cur.execute("SELECT id FROM genres WHERE name = %s", (g,))
-            grow = self.cur.fetchone()
+            cur.execute("SELECT id FROM genres WHERE name = %s", (g,))
+            grow = cur.fetchone()
             if grow:
                 genre_ids.append(grow[0])
             else:
-                self.cur.execute("INSERT INTO genres (name) VALUES (%s)", (g,))
-                genre_ids.append(self.cur.lastrowid)
+                cur.execute("INSERT INTO genres (name) VALUES (%s)", (g,))
+                genre_ids.append(cur.lastrowid)
         if not genre_ids:
             continue
 
-        self.cur.execute("SELECT id FROM songs WHERE title = %s AND artist_id = %s", (title, artist_id))
-        if self.cur.fetchone():
+        cur.execute("SELECT id FROM songs WHERE title = %s AND artist_id = %s", (title, artist_id))
+        if cur.fetchone():
             rejected.add((title, artist))
             continue
 
         #Insert single (album_id NULL)
-        self.cur.execute("INSERT INTO songs (title, artist_id, album_id, release_date) VALUES (%s, %s, NULL, %s)",
+        cur.execute("INSERT INTO songs (title, artist_id, album_id, release_date) VALUES (%s, %s, NULL, %s)",
                         (title, artist_id, date))
-        song_id = self.cur.lastrowid
+        song_id = cur.lastrowid
 
         #Link song to genres
         for gid in genre_ids:
-            self.cur.execute("INSERT IGNORE INTO song_genres (song_id, genre_id) VALUES (%s, %s)",
+            cur.execute("INSERT IGNORE INTO song_genres (song_id, genre_id) VALUES (%s, %s)",
                             (song_id, gid))
-        self.conn.commit()
+        db_conn.commit()
+        cur.close()
     return rejected
 
-def load_albums(self, albums: List[Tuple[str, str, str, List[str]]]) -> Set[Tuple[str, str]]:
+def load_albums(db_conn, albums: List[Tuple[str, str, str, List[str]]]) -> Set[Tuple[str, str]]:
     """
     Add albums to the database. 
     
@@ -92,61 +94,63 @@ def load_albums(self, albums: List[Tuple[str, str, str, List[str]]]) -> Set[Tupl
         Set is empty if there are no rejects.
     """
     rejected = set()
+    cur = db_conn.cursor()
     for item in albums:
         # ensure artist exists
         album_title, album_genre, artist, release_date, songs = item
 
-        self.cur.execute("SELECT id FROM artists WHERE name = %s", (artist,))
-        row = self.cur.fetchone()
+        cur.execute("SELECT id FROM artists WHERE name = %s", (artist,))
+        row = cur.fetchone()
         if row:
             artist_id = row[0]
         else:
-            self.cur.execute("INSERT INTO artists (name) VALUES (%s)", (artist,))
-            artist_id = self.cur.lastrowid
+            cur.execute("INSERT INTO artists (name) VALUES (%s)", (artist,))
+            artist_id = cur.lastrowid
 
         #add given album genre
-        self.cur.execute("SELECT id FROM genres WHERE name = %s", (album_genre,))
-        grow = self.cur.fetchone()
+        cur.execute("SELECT id FROM genres WHERE name = %s", (album_genre,))
+        grow = cur.fetchone()
         if grow:
             album_genre_id = grow[0]
         else:
-            self.cur.execute("INSERT INTO genres (name) VALUES (%s)", (album_genre,))
-            album_genre_id = self.cur.lastrowid
+            cur.execute("INSERT INTO genres (name) VALUES (%s)", (album_genre,))
+            album_genre_id = cur.lastrowid
 
         #Check if album already exists for artist
-        self.cur.execute(
+        cur.execute(
             "SELECT id FROM albums WHERE name = %s AND artist_id = %s",
             (album_title, artist_id)
         )
-        arow = self.cur.fetchone()
+        arow = cur.fetchone()
 
         if arow:
             rejected.add((album_title, artist))
             continue
 
-        self.cur.execute(
+        cur.execute(
             "INSERT INTO albums (name, artist_id, release_date, genre_id) VALUES (%s, %s, %s, %s)",
             (album_title, artist_id, release_date, album_genre_id)
         )
-        album_id = self.cur.lastrowid
+        album_id = cur.lastrowid
 
         #Check if album already exist for that artist
         for title in songs:
         # Insert only if title does not already exist for this artist
-            self.cur.execute("SELECT id FROM songs WHERE title = %s AND artist_id = %s",
+            cur.execute("SELECT id FROM songs WHERE title = %s AND artist_id = %s",
                             (title, artist_id))
-            if not self.cur.fetchone():
-                self.cur.execute("INSERT INTO songs (title, artist_id, album_id, release_date) VALUES (%s, %s, %s, %s)",
+            if not cur.fetchone():
+                cur.execute("INSERT INTO songs (title, artist_id, album_id, release_date) VALUES (%s, %s, %s, %s)",
                                 (title, artist_id, album_id, release_date))
-                song_id = self.cur.lastrowid
+                song_id = cur.lastrowid
 
                 # Assign this album’s genre to every song
-                self.cur.execute("INSERT INTO song_genres (song_id, genre_id) VALUES (%s, %s)",
+                cur.execute("INSERT INTO song_genres (song_id, genre_id) VALUES (%s, %s)",
                                 (song_id, album_genre_id))
-        self.conn.commit()
+        db_conn.commit()
+        cur.close()
     return rejected
 
-def load_users(self, users: List[str]) -> Set[str]:
+def load_users(db_conn, users: List[str]) -> Set[str]:
     """
     Add users to the database. 
 
@@ -160,14 +164,16 @@ def load_users(self, users: List[str]) -> Set[str]:
         Set is empty if there are no rejects.
     """
     rejected = set()
+    cur = db_conn.cursor()
     for u in users:
-        self.cur.execute("INSERT IGNORE INTO users (username) VALUES (%s)", (u,))
-        if not self.cur.rowcount:
+        cur.execute("INSERT IGNORE INTO users (username) VALUES (%s)", (u,))
+        if not cur.rowcount:
             rejected.add(u)
-    self.conn.commit()
+    db_conn.commit()
+    cur.close()
     return rejected
 
-def load_song_ratings(self, ratings: List[Tuple[str, Tuple[str, str], int, str]]) -> Set[Tuple[str, str, str]]:
+def load_song_ratings(db_conn, ratings: List[Tuple[str, Tuple[str, str], int, str]]) -> Set[Tuple[str, str, str]]:
     """
     Load ratings for songs, which are either singles or songs in albums. 
 
@@ -191,19 +197,20 @@ def load_song_ratings(self, ratings: List[Tuple[str, Tuple[str, str], int, str]]
     """
 
     rejected = set()
+    cur = db_conn.cursor()
     for user, (artist, title), stars, date in ratings:
         #(a)check if user exist
-        self.cur.execute("SELECT id FROM users WHERE username = %s", (user,))
-        urow = self.cur.fetchone()
+        cur.execute("SELECT id FROM users WHERE username = %s", (user,))
+        urow = cur.fetchone()
         if not urow:
             rejected.add((user, artist, title))
             continue
         uid = urow[0]
 
         #(b) check if song exist (artist, title)
-        self.cur.execute("SELECT s.id FROM songs s JOIN artists a ON s.artist_id = a.id WHERE a.name = %s AND s.title = %s",
+        cur.execute("SELECT s.id FROM songs s JOIN artists a ON s.artist_id = a.id WHERE a.name = %s AND s.title = %s",
                         (artist, title))
-        srow = self.cur.fetchone()
+        srow = cur.fetchone()
         if not srow:
             rejected.add((user, artist, title))
             continue
@@ -220,20 +227,21 @@ def load_song_ratings(self, ratings: List[Tuple[str, Tuple[str, str], int, str]]
             continue
 
         #(c)check if user already rated this song
-        self.cur.execute("SELECT 1 FROM ratings WHERE user_id = %s AND song_id = %s",
+        cur.execute("SELECT 1 FROM ratings WHERE user_id = %s AND song_id = %s",
                         (uid, sid))
-        if self.cur.fetchone():
+        if cur.fetchone():
             rejected.add((user, artist, title))
             continue
 
         #Insert rating
-        self.cur.execute("INSERT INTO ratings (user_id, song_id, rating, rating_date) VALUES (%s, %s, %s, %s)",
+        cur.execute("INSERT INTO ratings (user_id, song_id, rating, rating_date) VALUES (%s, %s, %s, %s)",
                         (uid, sid, r, date))
-        self.conn.commit()
+        db_conn.commit()
+        cur.close()
     return rejected
 
 #queries
-def get_most_prolific_individual_artists(self, n: int, yr: Tuple[int, int]) -> List[Tuple[str, int]]:
+def get_most_prolific_individual_artists(db_conn, n: int, yr: Tuple[int, int]) -> List[Tuple[str, int]]:
     """
     Get the top n most prolific individual artists by number of singles released in a year range. 
     Break ties by alphabetical order of artist name.
@@ -249,7 +257,8 @@ def get_most_prolific_individual_artists(self, n: int, yr: Tuple[int, int]) -> L
         If there are no artists, an empty list is returned.
     """
     s, e = yr
-    self.cur.execute("""
+    cur = db_conn.cursor()
+    cur.execute("""
                     SELECT a.name, COUNT(*)
                     FROM songs s
                     JOIN artists a ON s.artist_id = a.id
@@ -258,10 +267,11 @@ def get_most_prolific_individual_artists(self, n: int, yr: Tuple[int, int]) -> L
                     ORDER BY COUNT(*) DESC, a.name
                     LIMIT %s
                     """, (s, e, n))
+    result = cur.fetchall()
+    cur.close()
+    return result
 
-    return self.cur.fetchall()
-
-def get_artists_last_single_in_year(self, year: int) -> Set[str]:
+def get_artists_last_single_in_year(db_conn, year: int) -> Set[str]:
     """
     Get all artists who released their last single in the given year.
     
@@ -273,7 +283,8 @@ def get_artists_last_single_in_year(self, year: int) -> Set[str]:
         Set[str]: set of artist names
         If there is no artist with a single released in the given year, an empty set is returned.
     """
-    self.cur.execute("""
+    cur = db_conn.cursor()
+    cur.execute("""
                     SELECT a.name
                     FROM artists a
                     JOIN songs s ON a.id = s.artist_id
@@ -281,9 +292,11 @@ def get_artists_last_single_in_year(self, year: int) -> Set[str]:
                     GROUP BY a.id
                     HAVING YEAR(MAX(s.release_date)) = %s
                     """, (year,))
-    return {r[0] for r in self.cur.fetchall()}
+    result = {r[0] for r in cur.fetchall()}
+    cur.close()
+    return result
 
-def get_top_song_genres(self, n: int) -> List[Tuple[str, int]]:
+def get_top_song_genres(db_conn, n: int) -> List[Tuple[str, int]]:
     """
     Get n genres that are most represented in terms of number of songs in that genre.
     Songs include singles as well as songs in albums. 
@@ -297,12 +310,15 @@ def get_top_song_genres(self, n: int) -> List[Tuple[str, int]]:
         least represented genre. If number of genres is less than n, returns all.
         Ties broken by alphabetical order of genre names.
     """
-    self.cur.execute(
+    cur = db_conn.cursor()
+    cur.execute(
         "SELECT g.name, COUNT(*) FROM song_genres sg JOIN genres g ON sg.genre_id = g.id "
         "GROUP BY g.id ORDER BY COUNT(*) DESC, g.name LIMIT %s", (n,))
-    return self.cur.fetchall()
+    result = cur.fetchall()
+    cur.close()
+    return result
 
-def get_album_and_single_artists(self) -> Set[str]:
+def get_album_and_single_artists(db_conn) -> Set[str]:
     """
     Get artists who have released albums as well as singles.
 
@@ -312,12 +328,15 @@ def get_album_and_single_artists(self) -> Set[str]:
     Returns:
         Set[str]: set of artist names
     """
-    self.cur.execute("""SELECT a.name FROM artists a WHERE EXISTS
+    cur = db_conn.cursor()
+    cur.execute("""SELECT a.name FROM artists a WHERE EXISTS
                         (SELECT 1 FROM songs WHERE artist_id = a.id AND album_id IS NOT NULL)
                         AND EXISTS (SELECT 1 FROM songs WHERE artist_id = a.id AND album_id IS NULL)""")
-    return {r[0] for r in self.cur.fetchall()}
+    result = {r[0] for r in cur.fetchall()}
+    cur.close()
+    return result
 
-def get_most_rated_songs(self, yr: Tuple[int, int], n: int) -> List[Tuple[str, str, int]]:
+def get_most_rated_songs(db_conn, yr: Tuple[int, int], n: int) -> List[Tuple[str, str, int]]:
     """
     Get the top n most rated songs in the given year range (both inclusive), 
     ranked from most rated to least rated. 
@@ -334,16 +353,19 @@ def get_most_rated_songs(self, yr: Tuple[int, int], n: int) -> List[Tuple[str, s
         List[Tuple[str,str,int]: list of (song title, artist name, number of ratings for song)   
     """
     s, e = yr
-    self.cur.execute("""SELECT s.title, a.name, COUNT(*) FROM ratings r
+    cur = db_conn.cursor()
+    cur.execute("""SELECT s.title, a.name, COUNT(*) FROM ratings r
                     JOIN songs s ON r.song_id = s.id
                     JOIN artists a ON s.artist_id = a.id
                     WHERE YEAR(r.rating_date) BETWEEN %s AND %s
                     GROUP BY s.id
                     ORDER BY COUNT(*) DESC, s.title
                     LIMIT %s""", (s, e, n))
-    return self.cur.fetchall()
+    result = cur.fetchall()
+    cur.close()
+    return result
 
-def get_most_engaged_users(self, yr: Tuple[int, int], n: int) -> List[Tuple[str, int]]:
+def get_most_engaged_users(db_conn, yr: Tuple[int, int], n: int) -> List[Tuple[str, int]]:
     """
     Get the top n most engaged users, in terms of number of songs they have rated.
     Break ties by alphabetical order of usernames.
@@ -357,10 +379,13 @@ def get_most_engaged_users(self, yr: Tuple[int, int], n: int) -> List[Tuple[str,
         List[Tuple[str, int]]: list of (username,number_of_songs_rated) tuples
     """
     s, e = yr
-    self.cur.execute("""SELECT u.username, COUNT(*) FROM ratings r JOIN users u ON r.user_id = u.id
+    cur = db_conn.cursor()
+    cur.execute("""SELECT u.username, COUNT(*) FROM ratings r JOIN users u ON r.user_id = u.id
                         WHERE YEAR(r.rating_date) BETWEEN %s AND %s
                         GROUP BY u.id ORDER BY COUNT(*) DESC, u.username LIMIT %s""", (s, e, n))
-    return self.cur.fetchall()
+    result = cur.fetchall()
+    cur.close()
+    return result
 
 def main():
     pass
